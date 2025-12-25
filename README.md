@@ -1,5 +1,4 @@
-Updated README.md
-Markdown# AI Acceleration Framework
+AI Acceleration Framework
 
 This is a refined framework for accelerating AI computations, achieving ~1.5x speedups in mid-sized models through tension-based pruning, deferred parallelism, entropy scheduling, and sphere-inspired integrations like variable zoom for automatic thinking. It's designed for GPU/vectorized operations and scales to Transformer-like models, with enhanced stability across varying data scales and models.
 
