@@ -1,4 +1,3 @@
-AI Acceleration Framework
 This is a refined framework for accelerating AI computations, achieving ~1.5x speedups in mid-sized models through tension-based pruning, deferred parallelism, and entropy scheduling. It's designed for GPU/vectorized operations and scales to Transformer-like models.
 Rooted in theoretical concepts, this framework was iteratively developed and refined using xAI's Grok as the primary AI assistant for prototyping, testing, and optimization.
 Features
@@ -19,7 +18,7 @@ Usage Example
 Replace standard Linear layers with CurvatureTuner for pruning:
 Pythonframework = AIAccelFramework()
 model = CurvatureTuner(in_features=128, out_features=64, framework=framework)
-# Train your model...
+Train your model...
 model.tension_accelerated_prune()  # Apply pruning
 to_sparse_model(model)  # Convert to sparse for efficiency
 Component Explanations
