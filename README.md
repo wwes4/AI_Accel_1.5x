@@ -62,6 +62,8 @@ Notes
 For Transformers: Replace Linear layers with CurvatureTuner; use gradient norms as vib_speed.
 Tested on synthetic data; adapt parameters like min_tension for your models.
 
+Credits
+
 Developed by [Wesley Wallis].
 Iteratively built with xAI's Grok as the key AI assistant for code refinement and benchmarking.
 
