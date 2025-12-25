@@ -10,7 +10,7 @@ Tested on mid-sized MLPs with 1.45x average speedup.
 
 Installation
 Requires PyTorch. Clone the repo and import the script:
-Bashgit clone https://github.com/yourusername/ai-accel-framework.git
+Bashgit clone https://github.com/wwes4/AI_Accel_1.5x.git
 In your Python code:
 Pythonimport torch
 from ai_accel_standalone import AIAccelFramework, CurvatureTuner  # etc.
