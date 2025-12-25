@@ -1,19 +1,29 @@
+
+### Updated ai_accel_standalone.py
+
+```python
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
 
-# Refined AI Acceleration Framework for Deployment
-# Improvements: Full Torch migration for GPU/vectorization (all ops on tensor/device); scaled defaults for better pruning (larger thresh/min for practical gains); added prune_to_zero flag (default True for zero sparsity); expanded deferred with vib_speed hook (gradient-norm proxy comment); auto-tuning aggressive_factor by param scale (e.g., larger models more aggressive); Transformer integration comments (e.g., for Bert-like, hook deferred in attention layers). No inf/div0; tested minimal runs.
-# Capabilities boosted: Scales to Transformers with 2x+ speed via batch-deferred and GPU prune; sparsity for FLOPs savings.
 # 1799130910257
+
+brain_wave_bands = {
+    'delta': {'low': 0.5, 'high': 4.0, 'mean': 2.25, 'bandwidth': 3.5},
+    'theta': {'low': 4.0, 'high': 8.0, 'mean': 6.0, 'bandwidth': 4.0},
+    'alpha': {'low': 8.0, 'high': 12.0, 'mean': 10.0, 'bandwidth': 4.0},
+    'beta': {'low': 12.0, 'high': 30.0, 'mean': 21.0, 'bandwidth': 18.0},
+    'gamma': {'low': 30.0, 'high': 100.0, 'mean': 65.0, 'bandwidth': 70.0}
+}
 
 class AIAccelFramework:
     """
-    Refined framework for AI acceleration.
+    Refined framework for AI acceleration with sphere integrations.
     """
-    def __init__(self, min_tension=1e-3, base_range=(-1e-3, 1e-3), decay_lambda_base=1e-10,
+    def __init__(self, min_tension=1e-4, base_range=(-1e-3, 1e-3), decay_lambda_base=1e-10,
                  equilibrium_threshold=0.1, entropy_rate=1e-5, zero_replacement_mode=True):
-        self.min_tension = min_tension
+        self.min_tension = min_tension  # Lowered for stability
         self.base_range = base_range
         self.decay_lambda_base = decay_lambda_base
         self.equilibrium_threshold = equilibrium_threshold
@@ -59,7 +69,7 @@ class AIAccelFramework:
 
 class CurvatureTuner(nn.Module):
     """
-    AI layer with enhanced pruning.
+    AI layer with enhanced pruning, variable zoom, and reverse pruning for automatic thinking.
     """
     def __init__(self, in_features, out_features, framework):
         super().__init__()
@@ -67,22 +77,48 @@ class CurvatureTuner(nn.Module):
         self.framework = framework
         self.optimizer = torch.optim.Adam(self.parameters(), lr=framework.learning_rate)
         self.defer_threshold = framework.min_tension * 10
-        self.aggressive_factor = 1.5  # Auto-tuned below in prune
+        self.aggressive_factor = 1.5  # Auto-tuned in prune
 
-    def forward(self, x, vib_speed=None):
-        if vib_speed is not None and vib_speed < self.defer_threshold:
+    def variable_zoom(self, x, zoom_level=0.0, brain_wave_band='alpha'):
+        if zoom_level > 0:  # Detail zoom-in
+            position_ratio = 0.5 - zoom_level * 0.5
+        else:  # Vast zoom-out
+            position_ratio = 0.5 + abs(zoom_level) * 0.5
+        position_ratio = torch.clamp(torch.tensor(position_ratio), 0.0, 1.0)
+        
+        band = brain_wave_bands.get(brain_wave_band, {'mean': 10.0})
+        freq = band['mean']
+        scaled = x * (freq ** 2)
+        scaled = torch.clamp(scaled, -1e10, 1e10)  # Added clamp to prevent overflow/NaN
+        tension = self.framework.hybrid_de_tension_vectorized(position_ratio)
+        zoomed = scaled + tension * self.framework.min_tension
+        
+        norm = x.norm()
+        if norm < self.framework.equilibrium_threshold * 10:  # Small scale: reverse prune (add detail)
+            noise = torch.rand_like(x) * self.framework.min_tension * 2
+            zoomed += noise
+        else:  # Large scale: approx (prune variation)
+            zoomed = torch.clamp(zoomed, *self.framework.base_range)
+        
+        return self.framework.compute_equilibrium(zoomed)
+
+    def forward(self, x, vib_speed=None, zoom_level=0.0, brain_wave_band='alpha'):
+        x = self.variable_zoom(x, zoom_level, brain_wave_band)
+        if vib_speed is None:
+            vib_speed = x.norm() / x.numel()**0.5  # Normalized for better triggering
+        if vib_speed < self.defer_threshold:
             return self.framework.compute_equilibrium(torch.zeros_like(x))
         eq_x = self.framework.compute_equilibrium(x)
         return self.linear(eq_x)
 
-    def tension_accelerated_prune(self, position_ratios=None, t=0, aggressive_factor=None, prune_to_zero=True):
-        # Auto-tune aggression by param scale
-        param_scale = sum(p.numel() for p in self.parameters()) / 1e6  # e.g., for large models
-        self.aggressive_factor = aggressive_factor or (1.5 + param_scale * 0.1)  # Scale up for big NNs
+    def tension_accelerated_prune(self, position_ratios=None, t=0, aggressive_factor=None, prune_to_zero=True, prune_rate=0.3):
+        param_scale = sum(p.numel() for p in self.parameters()) / 1e6
+        self.aggressive_factor = aggressive_factor or (1.5 + param_scale * 0.1)
         device = next(self.parameters()).device
         if position_ratios is None:
             position_ratios = torch.linspace(0.1, 0.9, len(list(self.parameters())), device=device)
         tensions = self.framework.hybrid_de_tension_vectorized(position_ratios, t=t)
+        effective_before = self.get_effective_params()
         with torch.no_grad():
             for i, param in enumerate(self.parameters()):
                 thresh = torch.abs(tensions[i]) * self.framework.equilibrium_threshold
@@ -99,6 +135,16 @@ class CurvatureTuner(nn.Module):
                         random_signs = torch.randint(0, 2, (zero_count,)).float() * 2 - 1
                         signs[zero_sign_mask] = random_signs.to(dtype=param.dtype, device=device)
                     param.data[mask] = signs * self.framework.min_tension
+        effective_after = self.get_effective_params()
+        if (effective_before - effective_after) / max(effective_before, 1) > prune_rate:
+            for param in self.parameters():
+                zero_mask = param.data == 0
+                rollback_count = int(zero_mask.sum().item() * (1 - prune_rate))
+                if rollback_count > 0:
+                    rollback_indices = torch.randperm(zero_mask.sum().item())[:rollback_count]
+                    param_flat = param.data.view(-1)
+                    zero_indices = zero_mask.view(-1).nonzero().squeeze()
+                    param_flat[zero_indices[rollback_indices]] = self.framework.min_tension * torch.sign(torch.randn(rollback_count).to(device))
 
     def get_effective_params(self):
         count = 0
@@ -114,6 +160,17 @@ class CurvatureTuner(nn.Module):
             loss = criterion(output, labels)
             acc = (output.argmax(dim=1) == labels).float().mean().item()
         return loss.item(), acc
+
+    def fine_tune_post_prune(self, data, labels, epochs=1, lr=0.001):
+        optimizer = optim.Adam(self.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss()
+        for _ in range(epochs):
+            self.train()
+            optimizer.zero_grad()
+            output = self(data)
+            loss = criterion(output, labels)
+            loss.backward()
+            optimizer.step()
 
 class QuantumBioAccel:
     """
@@ -155,7 +212,7 @@ class MultiObserverAccel:
         for epoch in range(epochs):
             t = t_start + epoch
             entropy_adjust = self.framework.entropy_decay(1.0, t, observer_cost=True)
-            self.framework.entropy_rate *= 0.9
+            self.framework.entropy_rate *= 0.95  # Slowed
             if hasattr(model, 'tension_accelerated_prune'):
                 model.tension_accelerated_prune(t=t)
         return entropy_adjust
@@ -177,9 +234,8 @@ class CosmoCoreAccel:
         consensus = self.framework.compute_equilibrium(torch.tensor(routes))
         return torch.mean(consensus)
 
-# Note for Transformer integration: In Bert-like models, replace Linear with CurvatureTuner; compute vib_speed as norm of gradients in forward (e.g., vib_speed = x.norm() if training); batch-parallel deferred by per-sample vib.
+# Note for Transformer integration: In Bert-like models, replace Linear with CurvatureTuner; compute vib_speed as norm of gradients in forward (e.g., vib_speed = x.norm() if training); batch-parallel deferred by per-sample vib; use zoom_level based on input scale.
 
-# To Sparse Helper (Fixed for nested)
 def to_sparse_model(model):
     """
     Convert pruned params to sparse for FLOPs savings (recursive for nested).
