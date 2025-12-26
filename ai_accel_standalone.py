@@ -1,7 +1,3 @@
-
-### Updated ai_accel_standalone.py
-
-```python
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -162,6 +158,12 @@ class CurvatureTuner(nn.Module):
         return loss.item(), acc
 
     def fine_tune_post_prune(self, data, labels, epochs=1, lr=0.001):
+        # Convert sparse parameters to dense if necessary for autograd compatibility
+        if self.linear.weight.is_sparse:
+            self.linear.weight = nn.Parameter(self.linear.weight.to_dense())
+        if self.linear.bias is not None and self.linear.bias.is_sparse:
+            self.linear.bias = nn.Parameter(self.linear.bias.to_dense())
+        
         optimizer = optim.Adam(self.parameters(), lr=lr)
         criterion = nn.CrossEntropyLoss()
         for _ in range(epochs):
@@ -186,10 +188,10 @@ class QuantumBioAccel:
             return equilibrated
         return perceive
 
-    def superposition_deferred_parallel(self, compute_funcs, vib_speeds, masses, position_ratio=0.5, t=0, max_forks=8):
+    def superposition_deferred_parallel(self, compute_funcs, vib_speeds, position_ratio=0.5, t=0, max_forks=8):
         deferreds = [self.deferred_knowing(func) for func in compute_funcs]
         results = []
-        for i, (speed, mass) in enumerate(zip(vib_speeds, masses)):
+        for i, speed in enumerate(vib_speeds):
             threshold = self.framework.min_tension * (1 + position_ratio)
             if speed > threshold:
                 num_forks = min(max(1, int(speed ** 2)), max_forks)
